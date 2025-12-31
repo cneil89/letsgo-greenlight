@@ -1,0 +1,99 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+  default:
+    desc: Print help
+    cmds:
+      - task --list
+
+  confirm:
+    internal: true
+    cmds:
+      - |
+        echo -n "Are you sure? [y/N] "
+        read ans
+        [ "${ans:-N}" = "y" ]
+
+  build:api:
+    desc: Build application
+    cmds:
+      - go build -ldflags="-s" -o=./bin/api ./cmd/api
+
+  run:api:
+    desc: Run the cmd/api application
+    cmds:
+      - go run ./cmd/api -db-dsn="{{.GREENLIGHT_DB_DSN}}"
+    vars:
+      GREENLIGHT_DB_DSN: '{{.GREENLIGHT_DB_DSN | default "${GREENLIGHT_DB_DSN}"}}'
+
+  run:air:
+    desc: Run the api w/ air for auto rebuilding/refreshing
+    cmds:
+      - >
+        air 
+        -build.cmd "go build -o ./tmp/api ./cmd/api" 
+        -build.entrypoint './tmp/api' 
+        -build.args_bin '-db-dsn={{.GREENLIGHT_DB_DSN}} -limiter-enabled=false -cors-trusted-origins="http://localhost:9000 http://localhost:9001"' 
+        -build.include_ext "go" 
+        -build.exclude_dir "tmp,vendor"
+    vars:
+      GREENLIGHT_DB_DSN: '{{.GREENLIGHT_DB_DSN | default "${GREENLIGHT_DB_DSN}"}}'
+
+  run:air:limiter:
+    desc: Run the api w/ rate limiter w/ air for auto rebuilding/refreshing 
+    cmds:
+      - >
+        air 
+        -build.cmd "go build -o ./tmp/api ./cmd/api" 
+        -build.entrypoint './tmp/api' 
+        -build.args_bin '-db-dsn={{.GREENLIGHT_DB_DSN}} -cors-trusted-origins="http://localhost:9000 http://localhost:9001"' 
+        -build.include_ext "go" 
+        -build.exclude_dir "tmp,vendor"
+    vars:
+      GREENLIGHT_DB_DSN: '{{.GREENLIGHT_DB_DSN | default "${GREENLIGHT_DB_DSN}"}}'
+
+  db:psql:
+    desc: Connect to the database using psql
+    cmds:
+      - psql {{.GREENLIGHT_DB_DSN}}
+    vars:
+      GREENLIGHT_DB_DSN: '{{.GREENLIGHT_DB_DSN | default "${GREENLIGHT_DB_DSN}"}}'
+
+  db:migrations:new:
+    desc: Create a new database migration (name required)
+    requires:
+      vars: [name]
+    cmds:
+      - echo "Creating migration files for {{.name}}..."
+      - migrate create -seq -ext=.sql -dir=./migrations {{.name}}
+
+  db:migrations:up:
+    desc: Apply all up database migrations
+    deps: [confirm]
+    cmds:
+      - echo "Running up migrations..."
+      - migrate -path ./migrations -database {{.GREENLIGHT_DB_DSN}} up
+    vars:
+      GREENLIGHT_DB_DSN: '{{.GREENLIGHT_DB_DSN | default "${GREENLIGHT_DB_DSN}"}}'
+
+
+  tidy:
+    desc: Tidy module dependencies and format all go files
+    cmds:
+      - echo "Tidying modules dependencies..."
+      - go mod tidy
+      - echo "Formatting go files"
+      - go fmt ./...
+
+  audit:
+    desc: Run quality control checks
+    cmds:
+      - echo 'Checking module dependencies...'
+      - go mod tidy -diff
+      - go mod verify
+      - echo 'Vetting code...'
+      - go vet ./...
+      - go tool staticcheck ./...
+      - echo 'Running tests...'
+      - go test -race -vet=off ./...
