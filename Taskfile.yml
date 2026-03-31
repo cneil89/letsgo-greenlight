@@ -77,7 +77,6 @@ tasks:
     vars:
       GREENLIGHT_DB_DSN: '{{.GREENLIGHT_DB_DSN | default "${GREENLIGHT_DB_DSN}"}}'
 
-
   tidy:
     desc: Tidy module dependencies and format all go files
     cmds:
